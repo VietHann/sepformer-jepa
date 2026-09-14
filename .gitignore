@@ -1,0 +1,52 @@
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Python tooling
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Training outputs / experiments
+results/
+runs/
+checkpoints/
+checkpoint/
+outputs/
+
+# Model checkpoints / large generated files
+*.ckpt
+*.pth
+*.pt
+*.bin
+
+# Logs
+*.log
+train_log.txt
+env.log
+log.txt
+
+# TensorBoard
+events.out.tfevents.*
+
+# Temporary files
+*.tmp
+*.temp
+*.swp

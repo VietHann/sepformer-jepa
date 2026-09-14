@@ -1,0 +1,17 @@
+CUDA_VISIBLE_DEVICES=0,1 \
+/home/anhlt/.conda/envs/mamba_tasnet/bin/torchrun \
+--nproc_per_node=2 \
+--master_port=27125 \
+train.py hparams/sepformer-jepa-libri2mix.yaml
+
+
+cd /project/anhlt/0607/research/source_predictive_sepformer
+
+CUDA_VISIBLE_DEVICES=0 \
+/home/anhlt/.conda/envs/mamba_tasnet/bin/torchrun \
+  --standalone \
+  --nproc_per_node=1 \
+  --master_port=29601 \
+  train.py \
+  hparams/sepformer-jepa-libri2mix.yaml \
+  --device=cuda:0
