@@ -1,20 +1,20 @@
-# Source-predictive SepFormer for blind two-speaker Libri2Mix separation.
+# Source-predictive SepFormer for two-speaker LRS2 separation.
 # The clean-source encoder and predictor are training-only modules.
 
 seed: 1234
 __set_seed: !apply:speechbrain.utils.seed_everything [!ref <seed>]
 
-data_folder: /project/anhlt/LibriMix/Libri2Mix
-type_data: libri2mix
+data_folder: /project/anhlt/lab-ss/LRS2-2mix/lrs2_rebuild/audio
+type_data: lrs2
 base_folder_dm: /project/anhlt/LibriMix/LibriSpeech/train-clean-100/
 
-experiment_name: source-predictive-sepformer-jepa-scratch-libri2mix
+experiment_name: sepformer-jepa-lrs2
 output_folder: !ref results/<experiment_name>-train100/<seed>
 train_log: !ref <output_folder>/train_log.txt
 save_folder: !ref <output_folder>/save
-train_data: !ref <save_folder>/libri2mix_train-100.csv
-valid_data: !ref <save_folder>/libri2mix_dev.csv
-test_data: !ref <save_folder>/libri2mix_test.csv
+train_data: !ref <save_folder>/lrs2_tr.csv
+valid_data: !ref <save_folder>/lrs2_cv.csv
+test_data: !ref <save_folder>/lrs2_tt.csv
 skip_prep: False
 ckpt_interval_minutes: 60
 
@@ -25,12 +25,12 @@ save_audio: False
 sample_rate: 8000
 
 N_epochs: 200
-batch_size: 2
+batch_size: 3
 lr: 0.00015
 clip_grad_norm: 5
 loss_upper_lim: 999999
 limit_training_signal_len: True
-training_signal_len: 72000
+training_signal_len: 32000
 
 dynamic_mixing: False
 use_wham_noise: False

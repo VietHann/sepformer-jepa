@@ -194,86 +194,11 @@ class SourcePredictiveSeparation(baseline_recipe.Separation):
         super().on_stage_start(stage, epoch)
         if stage == sb.Stage.TRAIN:
             self._reset_training_metrics()
-        else:
-            self._sisnri_sum = 0.0
-            self._sisnri_count = 0
 
     def on_stage_end(self, stage, stage_loss, epoch=None):
-        """Log SI-SNRi for validation and test without changing selection."""
-        stage_stats = {"si-snr": stage_loss}
+        super().on_stage_end(stage, stage_loss, epoch)
         if stage == sb.Stage.TRAIN:
-            self.train_stats = stage_stats
             self.train_stats.update(self._training_metric_stats())
-            return
-
-        # ``compute_objectives`` is a negative SI-SNR loss, hence the
-        # improvement is baseline_loss - estimated_loss.
-        stage_stats["si-snri"] = self._sisnri_sum / max(1, self._sisnri_count)
-
-        if stage == sb.Stage.VALID:
-            if isinstance(
-                self.hparams.lr_scheduler,
-                baseline_recipe.schedulers.ReduceLROnPlateau,
-            ):
-                current_lr, next_lr = self.hparams.lr_scheduler(
-                    [self.optimizer], epoch, stage_loss
-                )
-                baseline_recipe.schedulers.update_learning_rate(
-                    self.optimizer, next_lr
-                )
-            else:
-                current_lr = self.hparams.optimizer.optim.param_groups[0]["lr"]
-
-            self.hparams.train_logger.log_stats(
-                stats_meta={"epoch": epoch, "lr": current_lr},
-                train_stats=self.train_stats,
-                valid_stats=stage_stats,
-            )
-            # Keep the existing SI-SNR criterion for checkpoint selection.
-            self.checkpointer.save_and_keep_only(
-                meta={"si-snr": stage_stats["si-snr"]}, min_keys=["si-snr"]
-            )
-        elif stage == sb.Stage.TEST:
-            self.hparams.train_logger.log_stats(
-                stats_meta={"Epoch loaded": self.hparams.epoch_counter.current},
-                test_stats=stage_stats,
-            )
-
-    def evaluate_batch(self, batch, stage):
-        """Evaluate a batch and accumulate SI-SNR improvement per utterance."""
-        if stage == sb.Stage.TRAIN:
-            return super().evaluate_batch(batch, stage)
-
-        mixture, _ = batch.mix_sig
-        targets = [batch.s1_sig, batch.s2_sig]
-        if self.hparams.num_spks == 3:
-            targets.append(batch.s3_sig)
-
-        with torch.no_grad():
-            predictions, targets = self.compute_forward(
-                batch.mix_sig, targets, stage
-            )
-            loss = self.compute_objectives(predictions, targets)
-            mixture_baseline = torch.stack(
-                [mixture] * self.hparams.num_spks, dim=-1
-            ).to(targets.device)
-            baseline_loss = self.compute_objectives(mixture_baseline, targets)
-
-        sisnri = (baseline_loss - loss).detach().reshape(-1)
-        self._sisnri_sum += sisnri.float().sum().item()
-        self._sisnri_count += sisnri.numel()
-
-        # Preserve the base recipe's optional audio export behavior.
-        if stage == sb.Stage.TEST and self.hparams.save_audio:
-            if hasattr(self.hparams, "n_audio_to_save"):
-                if self.hparams.n_audio_to_save > 0:
-                    self.save_audio(
-                        batch.id[0], batch.mix_sig, targets, predictions
-                    )
-                    self.hparams.n_audio_to_save -= 1
-            else:
-                self.save_audio(batch.id[0], batch.mix_sig, targets, predictions)
-        return loss.mean().detach()
 
     def _freeze_target_encoder(self):
         self.modules.target_encoder.requires_grad_(False)
@@ -546,10 +471,9 @@ class SourcePredictiveSeparation(baseline_recipe.Separation):
 
 
 def _load_libri_preparation():
-    # Old external path:
-    # /project/anhlt/lab-ss/LongHorn-TasNet-Libri/utils/prepare_data_libri.py
-    # Resolve ./prepare_data_libri.py relative to this file, not the shell cwd.
-    prep_path = Path(__file__).resolve().parent / "prepare_data_libri.py"
+    prep_path = Path(
+        "/project/anhlt/lab-ss/LongHorn-TasNet-Libri/utils/prepare_data_libri.py"
+    )
     spec = importlib.util.spec_from_file_location(
         "longhorn_librimix_preparation", prep_path
     )
@@ -560,59 +484,23 @@ def _load_libri_preparation():
     return module
 
 
-def _load_lrs2_preparation():
-    """Load the CSV preparation utilities for the LRS2 mixture dataset."""
-    prep_path = Path(__file__).resolve().parent / "prepare_data_lrs2.py"
-    spec = importlib.util.spec_from_file_location(
-        "lrs2_preparation", prep_path
-    )
-    if spec is None or spec.loader is None:
-        raise RuntimeError(f"Cannot load LRS2 preparation from {prep_path}")
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
-
-
 def _prepare_datasets(hparams):
-    type_data = str(hparams.get("type_data", "libri2mix")).lower()
+    libri_preparation = _load_libri_preparation()
 
-    if type_data in {"libri", "librimix", "libri2mix"}:
-        data_preparation = _load_libri_preparation()
-        preparation_kwargs = {
+    run_on_main(
+        libri_preparation.prepare_wsjmix,
+        kwargs={
             "datapath": hparams["data_folder"],
             "savepath": hparams["save_folder"],
             "n_spks": hparams["num_spks"],
             "skip_prep": hparams["skip_prep"],
             "librimix_addnoise": hparams["use_wham_noise"],
             "fs": hparams["sample_rate"],
-        }
-    elif type_data == "lrs2":
-        data_preparation = _load_lrs2_preparation()
-        preparation_kwargs = {
-            "datapath": hparams["data_folder"],
-            "savepath": hparams["save_folder"],
-            "n_spks": hparams["num_spks"],
-            "skip_prep": hparams["skip_prep"],
-        }
-    else:
-        raise ValueError(
-            "Unsupported type_data={!r}. Expected one of: "
-            "libri2mix, librimix, libri, lrs2.".format(type_data)
-        )
-
-    run_on_main(
-        data_preparation.prepare_wsjmix,
-        kwargs=preparation_kwargs,
+        },
     )
 
     if not hparams["dynamic_mixing"]:
         return baseline_recipe.dataio_prep(hparams)
-
-    if type_data == "lrs2":
-        raise ValueError(
-            "dynamic_mixing is currently supported only for LibriMix "
-            f"datasets, not {type_data!r}"
-        )
 
     from dynamic_mixing import dynamic_mix_data_prep_librimix
 
